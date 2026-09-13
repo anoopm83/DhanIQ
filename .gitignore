@@ -2,6 +2,8 @@
 
 # dependencies
 /node_modules
+# nested node_modules (e.g. research tooling)
+**/node_modules/
 /.pnp
 .pnp.*
 .yarn/*

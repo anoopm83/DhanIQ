@@ -1,0 +1,18 @@
+{
+  "name": "ambak-play-scraper",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "description": "One-off research tool: pull Google Play ratings & reviews for Ambak apps. Isolated from the DhanIQ app.",
+  "scripts": {
+    "scrape": "node play-reviews.mjs",
+    "discover": "node discover.mjs",
+    "compare": "node compare-apps.mjs",
+    "themes": "node theme-analysis.mjs"
+  },
+  "dependencies": {
+    "app-store-scraper": "^0.18.0",
+    "google-play-scraper": "^10.0.0",
+    "xlsx": "^0.18.5"
+  }
+}
