@@ -8,7 +8,8 @@
     "scrape": "node play-reviews.mjs",
     "discover": "node discover.mjs",
     "compare": "node compare-apps.mjs",
-    "themes": "node theme-analysis.mjs"
+    "themes": "node theme-analysis.mjs",
+    "inferences": "node inferences.mjs"
   },
   "dependencies": {
     "app-store-scraper": "^0.18.0",
