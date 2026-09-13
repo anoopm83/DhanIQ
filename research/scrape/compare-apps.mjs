@@ -16,19 +16,46 @@ const store = storeImport.default ?? storeImport;
 
 const COUNTRY = "in";
 const LANG = "en";
-const PLAY_REVIEWS = 60; // recent reviews to pull per Play app
-const APPLE_PAGES = 3; // Apple: ~50 reviews/page
+const PLAY_REVIEWS = 200; // pull wide, then keep only home-loan-relevant ones
+const APPLE_PAGES = 6; // Apple: ~50 reviews/page
 
 // Chosen apps (see discover.mjs output). appleId = null when no IN iOS app found.
+// homeLoanOnly = true means the whole app is a home-loan product, so generic
+// reviews ("good app", "can't log in") count as home-loan context. false =
+// multi-product app, so generic reviews are dropped and only explicit
+// home-loan mentions are kept.
 const APPS = [
-  { brand: "Ambak", audience: "Partner/DSA", playId: "com.ambak.saathi", appleId: 6474469003 },
-  { brand: "Credit Dharma", audience: "Consumer (home loan)", playId: "com.tresscommas.threedots", appleId: null },
-  { brand: "Easiloan", audience: "Consumer (home loan)", playId: "com.easiloan.app", appleId: null },
-  { brand: "Andromeda (OneAndro)", audience: "Loan agent/DSA", playId: "com.oneandro", appleId: 6478778926 },
-  { brand: "Paisabazaar", audience: "Consumer (credit/loans)", playId: "com.paisabazaar", appleId: 1029403201 },
-  { brand: "GoCredit", audience: "Consumer (personal loan)", playId: "money.gocredit.ai", appleId: null },
-  { brand: "HomeFirst", audience: "Consumer (home loan)", playId: "com.homefirstindia.customer", appleId: 1444845347 },
+  { brand: "Ambak", audience: "Partner/DSA (home loan)", playId: "com.ambak.saathi", appleId: 6474469003, homeLoanOnly: true },
+  { brand: "Credit Dharma", audience: "Consumer (home loan)", playId: "com.tresscommas.threedots", appleId: null, homeLoanOnly: true },
+  { brand: "Easiloan", audience: "Consumer (home loan)", playId: "com.easiloan.app", appleId: null, homeLoanOnly: true },
+  { brand: "Andromeda (OneAndro)", audience: "Loan agent/DSA (multi-product)", playId: "com.oneandro", appleId: 6478778926, homeLoanOnly: false },
+  { brand: "Paisabazaar", audience: "Consumer (multi-product)", playId: "com.paisabazaar", appleId: 1029403201, homeLoanOnly: false },
+  { brand: "GoCredit", audience: "Consumer (personal loan)", playId: "money.gocredit.ai", appleId: null, homeLoanOnly: false },
+  { brand: "HomeFirst", audience: "Consumer (home loan)", playId: "com.homefirstindia.customer", appleId: 1444845347, homeLoanOnly: true },
 ];
+
+// ---- home-loan relevance filter ----
+const HOME_LOAN_KW = [
+  "home loan", "homeloan", "home-loan", "housing loan", "house loan", "home finance",
+  "housing finance", "mortgage", "property loan", "loan against property", "lap",
+  "balance transfer", "top up loan", "top-up loan", "sanction letter", "home first",
+  "homefirst", "hffc", "home lon", "housing", "grih", "ghar", "makan", "makaan",
+];
+const OTHER_PRODUCT_KW = [
+  "personal loan", "credit card", "credit score", "cibil", "credit report", "credit health",
+  "credit pro", "insurance", "mutual fund", "upi", "recharge", "fixed deposit", " fd ",
+  "business loan", "gold loan", "car loan", "two wheeler", "education loan", "instant loan",
+  "payday", "bnpl", "pay later",
+];
+const norm = (t) => ` ${(t || "").toLowerCase().replace(/\s+/g, " ")} `;
+function isHomeLoanRelevant(text, homeLoanOnly) {
+  const s = norm(text);
+  const hasHL = HOME_LOAN_KW.some((k) => s.includes(k));
+  if (hasHL) return true; // explicit home-loan mention -> always keep
+  const hasOther = OTHER_PRODUCT_KW.some((k) => s.includes(k));
+  if (hasOther) return false; // clearly a different product -> drop
+  return homeLoanOnly; // generic: keep only for home-loan-only apps
+}
 
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
@@ -48,13 +75,17 @@ async function scrapePlay(app) {
   try {
     const res = await gplay.reviews({ appId: app.playId, country: COUNTRY, lang: LANG, sort: gplay.sort.NEWEST, num: PLAY_REVIEWS });
     const data = Array.isArray(res) ? res : res?.data ?? [];
-    out.reviews = data.map((r) => ({
-      user: r.userName,
-      score: r.score,
-      date: r.date ? String(r.date).slice(0, 10) : null,
-      text: (r.text || "").replace(/\s+/g, " ").trim(),
-      thumbsUp: r.thumbsUp ?? null,
-    }));
+    out.reviews = data.map((r) => {
+      const text = (r.text || "").replace(/\s+/g, " ").trim();
+      return {
+        user: r.userName,
+        score: r.score,
+        date: r.date ? String(r.date).slice(0, 10) : null,
+        text,
+        thumbsUp: r.thumbsUp ?? null,
+        homeLoan: isHomeLoanRelevant(text, app.homeLoanOnly),
+      };
+    });
   } catch (e) {
     out.reviewsError = `reviews: ${e?.message || e}`;
   }
@@ -81,12 +112,14 @@ async function scrapeApple(app) {
       for (const r of res) {
         if (seen.has(r.id)) continue;
         seen.add(r.id);
+        const text = `${r.title ? r.title + " — " : ""}${(r.text || "").replace(/\s+/g, " ").trim()}`;
         out.reviews.push({
           user: r.userName,
           score: r.score,
           date: r.updated ? String(r.updated).slice(0, 10) : null,
-          text: `${r.title ? r.title + " — " : ""}${(r.text || "").replace(/\s+/g, " ").trim()}`,
+          text,
           thumbsUp: null,
+          homeLoan: isHomeLoanRelevant(text, app.homeLoanOnly),
         });
       }
       await sleep(400);
@@ -123,33 +156,37 @@ const summaryHeader = [
   "Brand", "Audience / app type",
   "Play app ID", "Play rating", "Play # ratings", "Play # text reviews", "Play installs", "Play last updated",
   "Apple app ID", "Apple rating", "Apple # ratings", "Apple last updated",
-  "Reviews pulled (Play/Apple)", "Notes",
+  "Home-loan reviews kept (Play/Apple)", "Sampled before filter (Play/Apple)", "Notes",
 ];
 const summaryRows = results.map((r) => {
   const notes = [];
   if (!r.appleId) notes.push("No iOS app found in IN App Store (Android-only)");
   if (r.play.error) notes.push(`Play: ${r.play.error}`);
   if (r.apple.error) notes.push(`Apple: ${r.apple.error}`);
+  const hlPlay = r.play.reviews.filter((x) => x.homeLoan).length;
+  const hlApple = r.apple.reviews.filter((x) => x.homeLoan).length;
+  if (hlPlay + hlApple === 0) notes.push("No home-loan-specific reviews in sample");
   return [
     r.brand, r.audience,
     r.playId, round(r.play.rating), r.play.ratings ?? "", r.play.reviewsCount ?? "", r.play.installs ?? "", r.play.updated ?? "",
     r.appleId ?? "N/A", round(r.apple.rating), r.apple.ratings ?? "", r.apple.updated ?? "",
-    `${r.play.reviews.length} / ${r.apple.reviews.length}`, notes.join("; "),
+    `${hlPlay} / ${hlApple}`, `${r.play.reviews.length} / ${r.apple.reviews.length}`, notes.join("; "),
   ];
 });
 const wsSummary = XLSX.utils.aoa_to_sheet([summaryHeader, ...summaryRows]);
 wsSummary["!cols"] = [
-  { wch: 20 }, { wch: 22 }, { wch: 26 }, { wch: 11 }, { wch: 12 }, { wch: 14 }, { wch: 12 }, { wch: 14 },
-  { wch: 12 }, { wch: 11 }, { wch: 12 }, { wch: 14 }, { wch: 18 }, { wch: 45 },
+  { wch: 20 }, { wch: 26 }, { wch: 26 }, { wch: 11 }, { wch: 12 }, { wch: 14 }, { wch: 12 }, { wch: 14 },
+  { wch: 12 }, { wch: 11 }, { wch: 12 }, { wch: 14 }, { wch: 22 }, { wch: 22 }, { wch: 45 },
 ];
 wsSummary["!autofilter"] = { ref: XLSX.utils.encode_range({ s: { r: 0, c: 0 }, e: { r: summaryRows.length, c: summaryHeader.length - 1 } }) };
 XLSX.utils.book_append_sheet(wb, wsSummary, "Summary");
 
 // All Reviews sheet (every pulled review, filterable)
+// Home-loan reviews only.
 const reviewRows = [["Brand", "Platform", "Rating (stars)", "Date", "User", "Review", "Helpful votes"]];
 for (const r of results) {
-  for (const rv of r.play.reviews) reviewRows.push([r.brand, "Google Play", rv.score ?? "", rv.date ?? "", rv.user ?? "", rv.text ?? "", rv.thumbsUp ?? ""]);
-  for (const rv of r.apple.reviews) reviewRows.push([r.brand, "Apple App Store", rv.score ?? "", rv.date ?? "", rv.user ?? "", rv.text ?? "", ""]);
+  for (const rv of r.play.reviews) if (rv.homeLoan) reviewRows.push([r.brand, "Google Play", rv.score ?? "", rv.date ?? "", rv.user ?? "", rv.text ?? "", rv.thumbsUp ?? ""]);
+  for (const rv of r.apple.reviews) if (rv.homeLoan) reviewRows.push([r.brand, "Apple App Store", rv.score ?? "", rv.date ?? "", rv.user ?? "", rv.text ?? "", ""]);
 }
 const wsReviews = XLSX.utils.aoa_to_sheet(reviewRows);
 wsReviews["!cols"] = [{ wch: 20 }, { wch: 16 }, { wch: 13 }, { wch: 12 }, { wch: 22 }, { wch: 90 }, { wch: 12 }];

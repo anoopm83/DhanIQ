@@ -33,14 +33,15 @@ const THEMES = {
 };
 
 // Analyst summaries — grounded in reading the actual pulled reviews (2026-09-13).
+// Grounded in reading the HOME-LOAN-filtered reviews (2026-09-13).
 const SUMMARY = {
-  "Ambak": "Very thin sample, all positive (partner app): 'smooth', 'better than other portal'. One 4-star flags an 'insecure' warning at install. Too few reviews to judge.",
-  "Credit Dharma": "Lowest overall rating in the set. Recent reviews are dominated by app AUTH FAILURES - cannot log in / sign up / app won't open. Product sentiment is masked by a broken first-run experience.",
+  "Ambak": "Thin sample, all positive (partner app): 'smooth', 'better than other portal'. One 4-star flags an 'insecure' warning at install. Too few reviews to judge.",
+  "Credit Dharma": "Closest analog to DhanIQ - a home-loan rate-comparison + EMI calculator. Users PRAISE it when it works ('accurate home-loan calculation', 'lowest home-loan rates across banks', 'better than other EMI calculators'), but recent reviews are dominated by LOGIN / APP-WON'T-OPEN failures that drag the rating to 3.79. The product idea lands; the app reliability doesn't.",
   "Easiloan": "No adoption on mobile (10+ installs, no ratings/reviews). Nothing to analyse.",
-  "Andromeda (OneAndro)": "Agent app, mostly positive, but complaints cluster on KYC/activation taking weeks, a slow-loading app, and unresponsive RMs; a few allege bugs/'not secure'.",
-  "Paisabazaar": "Large, mature app (4.58 lifetime). Recent complaints center on PAID services not delivering (Credit Pro / Credit Health Report), data-privacy ('selling my data'), and 'pre-approved then rejected'. Praise is for easy free credit-score checks.",
-  "GoCredit": "Overwhelmingly 5-star with short, generic text (possible solicited reviews - read with caution). Rare complaints cite high interest and data concerns.",
-  "HomeFirst": "Recent reviews skew angry despite a 4.28 lifetime rating: the loudest themes are HIGH INTEREST RATES and POOR AFTER-SALES / customer care (helpline never connects), plus statement/payment disputes.",
+  "Andromeda (OneAndro)": "Only ~1 home-loan-specific review survived the filter (a positive cross-sell mention). OneAndro is a broad loan+insurance AGENT app; home loans are not its review story.",
+  "Paisabazaar": "Few home-loan-specific reviews (~12) and mostly POSITIVE: users check credit score/report before applying, and some report smooth home-loan support/disbursal. Its heavy complaints (paid Credit-Pro, data-privacy, 'pre-approved then rejected') are about OTHER products and were filtered out of this home-loan view.",
+  "GoCredit": "Personal-loan app - ZERO home-loan reviews survived the filter. Not a home-loan competitor.",
+  "HomeFirst": "Home-loan lender. Reviews skew angry despite a 4.28 lifetime rating: loudest home-loan themes are HIGH INTEREST RATES and POOR AFTER-SALES / customer care (helpline never connects), plus statement/payment disputes.",
 };
 
 const norm = (t) => ` ${(t || "").toLowerCase().replace(/\s+/g, " ")} `;
@@ -83,7 +84,8 @@ const header = [
 ];
 
 const rows = DATA.results.map((r) => {
-  const all = [...r.play.reviews, ...r.apple.reviews];
+  // home-loan-relevant reviews only (flagged by compare-apps.mjs)
+  const all = [...r.play.reviews, ...r.apple.reviews].filter((x) => x.homeLoan);
   const withText = all.filter((x) => x.text);
   const neg = all.filter((x) => x.score <= 3).length;
   const overall = r.play.rating ?? r.apple.rating;
@@ -107,10 +109,12 @@ const rows = DATA.results.map((r) => {
 const note = [
   [],
   ["METHOD & CAVEATS"],
+  ["Scope", "HOME-LOAN reviews only. Multi-product apps (Paisabazaar, GoCredit, Andromeda) are filtered to reviews that mention home loans; non-home-loan topics (personal loan, credit card/score, insurance, UPI, etc.) are excluded."],
+  ["Filter rule", "Keep if text mentions home-loan terms (home/housing loan, mortgage, LAP, HFFC, balance transfer, ghar...). Drop if it names another product with no home-loan mention. Generic reviews kept only for home-loan-only apps (Ambak, Credit Dharma, Easiloan, HomeFirst)."],
   ["Country", "India stores (Google Play + Apple App Store)"],
-  ["Sampling", "Reviews pulled NEWEST-first. The sample over-represents recent complaints; the 'Overall rating (lifetime)' column is the true average from store metadata."],
+  ["Sampling", "Up to 200 Play + ~300 Apple recent reviews pulled per app, NEWEST-first, THEN filtered to home loans. 'Overall rating (lifetime)' is the store's true average across ALL products, not just home loans."],
   ["Theme tagging", "Keyword-based and approximate; one review can match several themes. Counts are directional."],
-  ["Coverage gaps", "Easiloan: no reviews. Ambak/GoCredit/Credit Dharma: no or empty iOS review feed. GoCredit ratings look solicited (generic 5-star text)."],
+  ["Coverage gaps", "Easiloan: no reviews at all. GoCredit is a personal-loan app, so few/no home-loan reviews survive the filter. GoCredit ratings also look solicited (generic 5-star text)."],
   ["Scraped at", DATA.scrapedAt],
 ];
 
